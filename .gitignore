@@ -1,0 +1,16 @@
+phase/
+reference/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+.venv
+*.pkl
+models/
+.ipynb_checkpoints/
+*.txt
+generate_nb.py
