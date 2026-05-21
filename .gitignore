@@ -13,4 +13,4 @@ venv/
 models/
 .ipynb_checkpoints/
 *.txt
-generate_nb.py
+*.py
