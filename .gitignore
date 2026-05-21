@@ -14,3 +14,6 @@ models/
 .ipynb_checkpoints/
 *.txt
 *.py
+*.pdf
+archive
+working
