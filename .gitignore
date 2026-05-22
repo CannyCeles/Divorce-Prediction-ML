@@ -12,7 +12,7 @@ venv/
 *.pkl
 models/
 .ipynb_checkpoints/
-*.txt
+context.txt
 *.py
 *.pdf
 archive
