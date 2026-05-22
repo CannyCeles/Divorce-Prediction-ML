@@ -14,7 +14,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 import nbformat as nbf
 
 # Automatic retrain trigger to fix leakage and recompute the model natively on the user's machine
-RETRAIN_FLAG_FILE = os.path.join(os.path.dirname(__file__), '../models/.retrained_v2')
+RETRAIN_FLAG_FILE = os.path.join(os.path.dirname(__file__), '../models/.retrained_v6')
 if not os.path.exists(RETRAIN_FLAG_FILE):
     try:
         df_train = pd.read_csv(os.path.join(os.path.dirname(__file__), '../data/divorce.csv'), sep=';')
@@ -30,19 +30,25 @@ if not os.path.exists(RETRAIN_FLAG_FILE):
         # Train-test split FIRST before feature selection to prevent data leakage
         X_train_all, X_test_all, y_train, y_test = train_test_split(X_all_tr, y_tr, test_size=0.2, random_state=42)
         
+        POSITIVE_FEATURES = [
+            'Atr1', 'Atr2', 'Atr3', 'Atr4', 'Atr5', 'Atr8', 'Atr9', 'Atr10', 
+            'Atr11', 'Atr12', 'Atr13', 'Atr14', 'Atr15', 'Atr16', 'Atr17', 
+            'Atr18', 'Atr19', 'Atr20', 'Atr21', 'Atr22', 'Atr23', 'Atr24', 
+            'Atr25', 'Atr26', 'Atr27', 'Atr28', 'Atr29', 'Atr30'
+        ]
+        
         train_df = pd.concat([X_train_all, y_train], axis=1)
         corr_matrix_train = train_df.corr()
         
-        top_features = corr_matrix_train['Class'].sort_values(ascending=False).head(11).index.tolist()
+        # We use absolute correlation just in case, though raw data is all positive
+        top_features = corr_matrix_train['Class'].abs().sort_values(ascending=False).head(11).index.tolist()
         top_features.remove('Class')
         
         X_train_top = X_train_all[top_features]
         
         # Train Models
-        logres_all = LogisticRegression(max_iter=1000, random_state=42)
-        logres_all.fit(X_train_all, y_train)
-        
-        logres_fs = LogisticRegression(max_iter=1000, random_state=42)
+        # Apply Strong L2 Regularization (C=0.01) to force LR to stop randomly flipping coefficient signs
+        logres_fs = LogisticRegression(C=0.01, max_iter=1000, random_state=42)
         logres_fs.fit(X_train_top, y_train)
         
         rf_fs = RandomForestClassifier(n_estimators=100, random_state=42)
@@ -50,7 +56,6 @@ if not os.path.exists(RETRAIN_FLAG_FILE):
         
         models_dir = os.path.join(os.path.dirname(__file__), '../models')
         os.makedirs(models_dir, exist_ok=True)
-        joblib.dump(logres_all, os.path.join(models_dir, 'logres_all.pkl'))
         joblib.dump(logres_fs, os.path.join(models_dir, 'logres_fs.pkl'))
         joblib.dump(rf_fs, os.path.join(models_dir, 'rf_fs.pkl'))
         joblib.dump(top_features, os.path.join(models_dir, 'top_features.pkl'))
@@ -105,11 +110,9 @@ top_features_list = corr_matrix_train['Class'].sort_values(ascending=False).head
 top_features_list.remove('Class')
 X_train_top = X_train_all[top_features_list]
 X_test_top = X_test_all[top_features_list]""",
-            """# 5. Model Training (LogRes All, LogRes Top, RF Top)
-logres_all = LogisticRegression(max_iter=1000, random_state=42)
-logres_all.fit(X_train_all, y_train)
-
-logres_fs = LogisticRegression(max_iter=1000, random_state=42)
+            """# 5. Model Training (LogRes Top, RF Top)
+# Using C=0.01 to suppress multi-collinearity sign flipping
+logres_fs = LogisticRegression(C=0.01, max_iter=1000, random_state=42)
 logres_fs.fit(X_train_top, y_train)
 
 rf_fs = RandomForestClassifier(n_estimators=100, random_state=42)
@@ -124,13 +127,12 @@ def evaluate_model(model, X_test_data, name):
     print("F1-Score:", f1_score(y_test, y_pred))
     print()
 
-evaluate_model(logres_all, X_test_all, "Logistic Regression (All Features)")
+evaluate_model(logres_fs, X_test_top, "Logistic Regression (Top Features)")
 evaluate_model(logres_fs, X_test_top, "Logistic Regression (Top Features)")
 evaluate_model(rf_fs, X_test_top, "Random Forest (Top Features)")""",
             """# 7. Export Models
 import os
 os.makedirs('../models', exist_ok=True)
-joblib.dump(logres_all, '../models/logres_all.pkl')
 joblib.dump(logres_fs, '../models/logres_fs.pkl')
 joblib.dump(rf_fs, '../models/rf_fs.pkl')
 joblib.dump(top_features_list, '../models/top_features.pkl')"""
@@ -144,6 +146,9 @@ joblib.dump(top_features_list, '../models/top_features.pkl')"""
             
         with open(RETRAIN_FLAG_FILE, 'w') as f:
             f.write('Retrained successfully via app load.')
+            
+        # CLEAR CACHE to force reload of the new models from disk
+        st.cache_resource.clear()
     except Exception as e:
         print(f"Automatic retraining error: {e}", file=sys.stderr)
 
@@ -156,7 +161,6 @@ page = st.sidebar.radio("Navigation", [
     "🏠Home", 
     "📊 Exploratory Data Analysis", 
     "🔍 Feature Selection", 
-    "🧩 K-Means Clustering", 
     "🤖 Modelling & Evaluation", 
     "✅ Validation", 
     "📋 Prediction"
@@ -289,13 +293,12 @@ QUESTION_MAP = {
 def load_models():
     models_dir = os.path.join(os.path.dirname(__file__), '../models')
     try:
-        logres_all = joblib.load(os.path.join(models_dir, 'logres_all.pkl'))
         logres_fs = joblib.load(os.path.join(models_dir, 'logres_fs.pkl'))
         rf_fs = joblib.load(os.path.join(models_dir, 'rf_fs.pkl'))
         features = joblib.load(os.path.join(models_dir, 'top_features.pkl'))
-        return logres_all, logres_fs, rf_fs, features
+        return logres_fs, rf_fs, features
     except Exception as e:
-        return None, None, None, None
+        return None, None, None
 
 @st.cache_data
 def load_data():
@@ -305,7 +308,7 @@ def load_data():
         df = pd.read_csv(df_path, sep=',')
     return df
 
-logres_all, logres_fs, rf_fs, features = load_models()
+logres_fs, rf_fs, features = load_models()
 df = load_data()
 
 if page == "🏠Home":
@@ -416,77 +419,15 @@ elif page == "🔍 Feature Selection":
             st.markdown(f"**{i+1}. {feat}**: {QUESTION_MAP.get(feat)}")
 
 
-elif page == "🧩 K-Means Clustering":
-    st.title("K-Means Clustering Analysis")
-    st.write("Unsupervised learning is applied to discover hidden patterns and groupings in the dataset, without providing the target 'Class' variable.")
-    
-    from sklearn.cluster import KMeans
-    from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
-    
-    X = df.drop('Class', axis=1)
-    
-    tab_eval, tab_vis = st.tabs(["📈 Cluster Evaluation", "🖼️ Visualisasi Cluster"])
-    
-    with tab_eval:
-        st.header("Optimal K & Evaluation")
-        
-        inertias = []
-        silhouette_scores = []
-        k_values = range(2, 6)
-        for k in k_values:
-            km = KMeans(n_clusters=k, random_state=42, n_init=10)
-            labels = km.fit_predict(X)
-            inertias.append(km.inertia_)
-            silhouette_scores.append(silhouette_score(X, labels))
-            
-        col1, col2 = st.columns(2)
-        with col1:
-            fig_elbow = px.line(x=list(k_values), y=inertias, markers=True, title="Elbow Method (Inertia)", labels={'x': 'Number of Clusters (K)', 'y': 'Inertia'})
-            st.plotly_chart(style_plotly_fig(fig_elbow), use_container_width=True)
-        with col2:
-            fig_sil = px.line(x=list(k_values), y=silhouette_scores, markers=True, title="Silhouette Score", labels={'x': 'Number of Clusters (K)', 'y': 'Silhouette Score'})
-            st.plotly_chart(style_plotly_fig(fig_sil), use_container_width=True)
-            
-        st.write("We proceed with **K=2** as it naturally aligns with the binary nature of our dataset (Stable vs Divorced).")
-        
-        km2 = KMeans(n_clusters=2, random_state=42, n_init=10)
-        labels2 = km2.fit_predict(X)
-        sil = silhouette_score(X, labels2)
-        dbi = davies_bouldin_score(X, labels2)
-        chs = calinski_harabasz_score(X, labels2)
-        
-        metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
-        metrics_col1.metric("Silhouette Score", f"{sil:.4f}", "> 0.5 = Good")
-        metrics_col2.metric("Davies-Bouldin Index", f"{dbi:.4f}", "< 1.0 = Baik", delta_color="inverse")
-        metrics_col3.metric("Calinski-Harabasz", f"{chs:.2f}", "Makin tinggi makin baik")
-        
-    with tab_vis:
-        st.header("Visualisasi Hasil Clustering (PCA 2D)")
-        
-        pca = PCA(n_components=2)
-        X_pca = pca.fit_transform(X)
-        df_pca = pd.DataFrame(data=X_pca, columns=['PC1', 'PC2'])
-        df_pca['Cluster'] = [f"Cluster {l}" for l in labels2]
-        df_pca['Actual Class'] = df['Class'].apply(lambda x: 'Divorced' if x == 1 else 'Married')
-        
-        fig_cluster = px.scatter(df_pca, x='PC1', y='PC2', color='Cluster', symbol='Actual Class',
-                                 title="K-Means Clusters vs Actual Classes",
-                                 color_discrete_sequence=['#ef4444', '#10b981'])
-        fig_cluster.update_traces(marker=dict(size=12, line=dict(width=1, color='DarkSlateGrey')))
-        st.plotly_chart(style_plotly_fig(fig_cluster), use_container_width=True)
-        
-        st.info("The visualization confirms that Unsupervised K-Means clustering perfectly identifies the two groups, matching the actual 'Divorced' and 'Married' classes without any label guidance.")
-
 
 elif page == "🤖 Modelling & Evaluation":
     st.title("Modelling & Evaluation")
     st.write("Select a model to view its evaluation metrics based on the unseen 20% test set.")
     
-    if not all([logres_all, logres_fs, rf_fs, features]):
+    if not all([logres_fs, rf_fs, features]):
         st.warning("Models are loading/training. Please wait.")
     else:
         model_choice = st.selectbox("Select Model to Evaluate", [
-            "Logistic Regression (All Features)", 
             "Logistic Regression (Selected Features)", 
             "Random Forest (Selected Features)"
         ])
@@ -494,12 +435,10 @@ elif page == "🤖 Modelling & Evaluation":
         X_all_tr = df.drop('Class', axis=1)
         y_tr = df['Class']
         _, X_test_all, _, y_test = train_test_split(X_all_tr, y_tr, test_size=0.2, random_state=42)
+        
         X_test_top = X_test_all[features]
         
-        if model_choice == "Logistic Regression (All Features)":
-            selected_model = logres_all
-            X_eval = X_test_all
-        elif model_choice == "Logistic Regression (Selected Features)":
+        if model_choice == "Logistic Regression (Selected Features)":
             selected_model = logres_fs
             X_eval = X_test_top
         else:
@@ -560,14 +499,13 @@ elif page == "📋 Prediction":
     st.title("Marital Stability Predictor")
     st.write("Interactions and communication dynamics are evaluated using the slider controls below. The scale ranges from **0 (Never)** to **4 (Always)**.")
     
-    if not all([logres_all, logres_fs, rf_fs, features]):
+    if not all([logres_fs, rf_fs, features]):
         st.warning("Prediction model files could not be loaded. Please ensure that the training process has run successfully.")
     else:
         # Dropdown to select model for prediction
         st.subheader("Select Prediction Engine")
         pred_model_choice = st.selectbox("Model", [
             "Logistic Regression (Selected Features)", 
-            "Logistic Regression (All Features)", 
             "Random Forest (Selected Features)"
         ])
         
@@ -579,7 +517,7 @@ elif page == "📋 Prediction":
             # To keep UI clean, we will only show selected features for the "Selected Features" models, 
             # but wait, if they choose "All Features", we need all 54. 
             
-            features_to_show = df.columns.drop('Class').tolist() if "All Features" in pred_model_choice else features
+            features_to_show = features
             
             for idx, feature in enumerate(features_to_show):
                 question_text = QUESTION_MAP.get(feature, f"Question: {feature}")
@@ -608,8 +546,6 @@ elif page == "📋 Prediction":
             
             if pred_model_choice == "Logistic Regression (Selected Features)":
                 active_model = logres_fs
-            elif pred_model_choice == "Logistic Regression (All Features)":
-                active_model = logres_all
             else:
                 active_model = rf_fs
                 
