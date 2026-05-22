@@ -13,7 +13,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 import nbformat as nbf
 
-# Automatic retrain trigger to fix leakage and recompute the model natively on the user's machine
 RETRAIN_FLAG_FILE = os.path.join(os.path.dirname(__file__), '../models/.retrained_v6')
 if not os.path.exists(RETRAIN_FLAG_FILE):
     try:
@@ -27,7 +26,6 @@ if not os.path.exists(RETRAIN_FLAG_FILE):
         X_all_tr = df_train.drop('Class', axis=1)
         y_tr = df_train['Class']
         
-        # Train-test split FIRST before feature selection to prevent data leakage
         X_train_all, X_test_all, y_train, y_test = train_test_split(X_all_tr, y_tr, test_size=0.2, random_state=42)
         
         POSITIVE_FEATURES = [
@@ -40,14 +38,11 @@ if not os.path.exists(RETRAIN_FLAG_FILE):
         train_df = pd.concat([X_train_all, y_train], axis=1)
         corr_matrix_train = train_df.corr()
         
-        # We use absolute correlation just in case, though raw data is all positive
         top_features = corr_matrix_train['Class'].abs().sort_values(ascending=False).head(11).index.tolist()
         top_features.remove('Class')
         
         X_train_top = X_train_all[top_features]
         
-        # Train Models
-        # Apply Strong L2 Regularization (C=0.01) to force LR to stop randomly flipping coefficient signs
         logres_fs = LogisticRegression(C=0.01, max_iter=1000, random_state=42)
         logres_fs.fit(X_train_top, y_train)
         
@@ -60,7 +55,6 @@ if not os.path.exists(RETRAIN_FLAG_FILE):
         joblib.dump(rf_fs, os.path.join(models_dir, 'rf_fs.pkl'))
         joblib.dump(top_features, os.path.join(models_dir, 'top_features.pkl'))
         
-        # Regenerate notebook
         nb = nbf.v4.new_notebook()
         code_blocks = [
             """# EDA and Modeling with PCA & K-Fold Validation
@@ -147,7 +141,6 @@ joblib.dump(top_features_list, '../models/top_features.pkl')"""
         with open(RETRAIN_FLAG_FILE, 'w') as f:
             f.write('Retrained successfully via app load.')
             
-        # CLEAR CACHE to force reload of the new models from disk
         st.cache_resource.clear()
     except Exception as e:
         print(f"Automatic retraining error: {e}", file=sys.stderr)
@@ -384,7 +377,6 @@ elif page == "📊 Exploratory Data Analysis":
     st.header("Visual Diagnostics")
     st.write("Histograms for all features to observe the distribution of responses (0 to 4).")
     
-    # We can plot a smaller subset or melt to avoid clutter
     fig = px.histogram(df.melt(id_vars=['Class']), x='value', facet_col='variable', facet_col_wrap=6, color='Class',
                        color_discrete_sequence=['#10b981', '#ef4444'])
     fig.update_layout(height=1200)
@@ -502,7 +494,6 @@ elif page == "📋 Prediction":
     if not all([logres_fs, rf_fs, features]):
         st.warning("Prediction model files could not be loaded. Please ensure that the training process has run successfully.")
     else:
-        # Dropdown to select model for prediction
         st.subheader("Select Prediction Engine")
         pred_model_choice = st.selectbox("Model", [
             "Logistic Regression (Selected Features)", 
@@ -513,9 +504,6 @@ elif page == "📋 Prediction":
             input_data = {}
             cols = st.columns(2)
             
-            # If Selected features, show only top 10 features. If all features, show all 54.
-            # To keep UI clean, we will only show selected features for the "Selected Features" models, 
-            # but wait, if they choose "All Features", we need all 54. 
             
             features_to_show = features
             
