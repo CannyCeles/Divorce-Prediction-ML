@@ -40,13 +40,15 @@ def simple_smote(X, y, target_size=200, random_state=42):
                 val = X_c[idx] + np.random.rand() * diff
                 synthetic_samples.append(val)
             synthetic_samples = np.array(synthetic_samples)
+            synthetic_samples = np.round(synthetic_samples).astype(int)
+            synthetic_samples = np.clip(synthetic_samples, 0, 4)
         X_synth_df = pd.DataFrame(synthetic_samples, columns=X.columns)
         y_synth_series = pd.Series(np.full(n_samples_to_add, c), name=y.name)
         X_res = pd.concat([X_res, X_synth_df], ignore_index=True)
         y_res = pd.concat([y_res, y_synth_series], ignore_index=True)
     return X_res, y_res
 
-RETRAIN_FLAG_FILE = os.path.join(os.path.dirname(__file__), '../models/.retrained_v9')
+RETRAIN_FLAG_FILE = os.path.join(os.path.dirname(__file__), '../models/.retrained_v10')
 if not os.path.exists(RETRAIN_FLAG_FILE):
     try:
         df_train = pd.read_csv(os.path.join(os.path.dirname(__file__), '../data/divorce.csv'), sep=';')
@@ -97,7 +99,7 @@ if not os.path.exists(RETRAIN_FLAG_FILE):
         code_blocks = [
             "import pandas as pd\nimport numpy as np\nimport matplotlib.pyplot as plt\nimport seaborn as sns\nimport joblib\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.ensemble import RandomForestClassifier\nfrom sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score\nfrom sklearn.decomposition import PCA\nsns.set_theme(style='whitegrid')",
             
-            "def simple_smote(X, y, target_size=200, random_state=42):\n    np.random.seed(random_state)\n    classes = np.unique(y)\n    X_res = X.copy()\n    y_res = y.copy()\n    from sklearn.neighbors import NearestNeighbors\n    for c in classes:\n        X_c = X[y == c].values\n        n_samples = len(X_c)\n        if n_samples >= target_size:\n            continue\n        n_samples_to_add = target_size - n_samples\n        k_neighbors = min(5, n_samples - 1)\n        if k_neighbors < 1:\n            synthetic_samples = X_c[np.random.choice(n_samples, n_samples_to_add)]\n        else:\n            nn = NearestNeighbors(n_neighbors=k_neighbors + 1)\n            nn.fit(X_c)\n            neighbors_idx = nn.kneighbors(X_c, return_distance=False)\n            synthetic_samples = []\n            for _ in range(n_samples_to_add):\n                idx = np.random.choice(n_samples)\n                neighbor_choice = np.random.choice(neighbors_idx[idx][1:])\n                diff = X_c[neighbor_choice] - X_c[idx]\n                val = X_c[idx] + np.random.rand() * diff\n                synthetic_samples.append(val)\n            synthetic_samples = np.array(synthetic_samples)\n        X_synth_df = pd.DataFrame(synthetic_samples, columns=X.columns)\n        y_synth_series = pd.Series(np.full(n_samples_to_add, c), name=y.name)\n        X_res = pd.concat([X_res, X_synth_df], ignore_index=True)\n        y_res = pd.concat([y_res, y_synth_series], ignore_index=True)\n    return X_res, y_res",
+            "def simple_smote(X, y, target_size=200, random_state=42):\n    np.random.seed(random_state)\n    classes = np.unique(y)\n    X_res = X.copy()\n    y_res = y.copy()\n    from sklearn.neighbors import NearestNeighbors\n    for c in classes:\n        X_c = X[y == c].values\n        n_samples = len(X_c)\n        if n_samples >= target_size:\n            continue\n        n_samples_to_add = target_size - n_samples\n        k_neighbors = min(5, n_samples - 1)\n        if k_neighbors < 1:\n            synthetic_samples = X_c[np.random.choice(n_samples, n_samples_to_add)]\n        else:\n            nn = NearestNeighbors(n_neighbors=k_neighbors + 1)\n            nn.fit(X_c)\n            neighbors_idx = nn.kneighbors(X_c, return_distance=False)\n            synthetic_samples = []\n            for _ in range(n_samples_to_add):\n                idx = np.random.choice(n_samples)\n                neighbor_choice = np.random.choice(neighbors_idx[idx][1:])\n                diff = X_c[neighbor_choice] - X_c[idx]\n                val = X_c[idx] + np.random.rand() * diff\n                synthetic_samples.append(val)\n            synthetic_samples = np.array(synthetic_samples)\n            synthetic_samples = np.round(synthetic_samples).astype(int)\n            synthetic_samples = np.clip(synthetic_samples, 0, 4)\n        X_synth_df = pd.DataFrame(synthetic_samples, columns=X.columns)\n        y_synth_series = pd.Series(np.full(n_samples_to_add, c), name=y.name)\n        X_res = pd.concat([X_res, X_synth_df], ignore_index=True)\n        y_res = pd.concat([y_res, y_synth_series], ignore_index=True)\n    return X_res, y_res",
             
             "df = pd.read_csv('../data/divorce.csv', sep=';')\nif len(df.columns) == 1:\n    df = pd.read_csv('../data/divorce.csv', sep=',')\ndf.dropna(inplace=True)\nif 'Id' in df.columns:\n    df.drop('Id', axis=1, inplace=True)",
             
@@ -127,7 +129,7 @@ if not os.path.exists(RETRAIN_FLAG_FILE):
             nbf.write(nb, f)
             
         with open(RETRAIN_FLAG_FILE, 'w') as f:
-            f.write('Retrained successfully with custom SMOTE scaling & 4 models.')
+            f.write('Retrained successfully with rounded custom SMOTE scaling & 4 models.')
             
         st.cache_resource.clear()
     except Exception as e:
@@ -561,8 +563,6 @@ elif page == "🔍 Feature Selection":
     st.info("""
     💡 **Core Takeaways from the Heatmap**:
     - **Positive Correlation (Red)**: The entire heatmap appears almost solid red, meaning higher scores are strongly correlated with Divorce (Class 1).
-    - **Methodological Error**: The original dataset did not reverse-score positive questions (e.g., 'I enjoy traveling with my wife'). Divorced couples scored '4' (Always) for every single question, while stable couples scored '0'.
-    - **Application Fix**: To fix this for realistic end-user predictions, this application automatically inverts inputs for the 28 positive questions behind the scenes.
     """)
     
     st.header("Selected Top 10 Features")
