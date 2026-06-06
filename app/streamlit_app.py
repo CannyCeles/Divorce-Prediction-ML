@@ -12,9 +12,44 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 import nbformat as nbf
-from imblearn.over_sampling import SMOTE
 
-RETRAIN_FLAG_FILE = os.path.join(os.path.dirname(__file__), '../models/.retrained_v7')
+def simple_smote(X, y, random_state=42):
+    np.random.seed(random_state)
+    classes, counts = np.unique(y, return_counts=True)
+    c0_count = counts[0]
+    c1_count = counts[1]
+    if c0_count == c1_count:
+        return X.copy(), y.copy()
+    majority_class = classes[np.argmax(counts)]
+    minority_class = classes[np.argmin(counts)]
+    X_min = X[y == minority_class].values
+    X_maj = X[y == majority_class].values
+    n_samples_to_add = len(X_maj) - len(X_min)
+    if n_samples_to_add <= 0:
+        return X.copy(), y.copy()
+    from sklearn.neighbors import NearestNeighbors
+    k_neighbors = min(5, len(X_min) - 1)
+    if k_neighbors < 1:
+        synthetic_samples = X_min[np.random.choice(len(X_min), n_samples_to_add)]
+    else:
+        nn = NearestNeighbors(n_neighbors=k_neighbors + 1)
+        nn.fit(X_min)
+        neighbors_idx = nn.kneighbors(X_min, return_distance=False)
+        synthetic_samples = []
+        for _ in range(n_samples_to_add):
+            idx = np.random.choice(len(X_min))
+            neighbor_choice = np.random.choice(neighbors_idx[idx][1:])
+            diff = X_min[neighbor_choice] - X_min[idx]
+            val = X_min[idx] + np.random.rand() * diff
+            synthetic_samples.append(val)
+        synthetic_samples = np.array(synthetic_samples)
+    X_res = np.vstack([X.values, synthetic_samples])
+    y_res = np.concatenate([y.values, np.full(n_samples_to_add, minority_class)])
+    X_res_df = pd.DataFrame(X_res, columns=X.columns)
+    y_res_series = pd.Series(y_res, name=y.name)
+    return X_res_df, y_res_series
+
+RETRAIN_FLAG_FILE = os.path.join(os.path.dirname(__file__), '../models/.retrained_v8')
 if not os.path.exists(RETRAIN_FLAG_FILE):
     try:
         df_train = pd.read_csv(os.path.join(os.path.dirname(__file__), '../data/divorce.csv'), sep=';')
@@ -50,9 +85,8 @@ if not os.path.exists(RETRAIN_FLAG_FILE):
         rf_fs_orig = RandomForestClassifier(n_estimators=100, random_state=42)
         rf_fs_orig.fit(X_train_top, y_train)
         
-        smote = SMOTE(random_state=42)
-        X_train_all_aug, y_train_all_aug = smote.fit_resample(X_train_all, y_train)
-        X_train_top_aug, y_train_top_aug = smote.fit_resample(X_train_top, y_train)
+        X_train_all_aug, y_train_all_aug = simple_smote(X_train_all, y_train)
+        X_train_top_aug, y_train_top_aug = simple_smote(X_train_top, y_train)
         
         logres_all_aug = LogisticRegression(C=0.01, max_iter=1000, random_state=42)
         logres_all_aug.fit(X_train_all_aug, y_train_all_aug)
@@ -81,7 +115,9 @@ if not os.path.exists(RETRAIN_FLAG_FILE):
         
         nb = nbf.v4.new_notebook()
         code_blocks = [
-            "import pandas as pd\nimport numpy as np\nimport matplotlib.pyplot as plt\nimport seaborn as sns\nimport joblib\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.ensemble import RandomForestClassifier\nfrom sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score\nfrom sklearn.decomposition import PCA\nfrom imblearn.over_sampling import SMOTE\nsns.set_theme(style='whitegrid')",
+            "import pandas as pd\nimport numpy as np\nimport matplotlib.pyplot as plt\nimport seaborn as sns\nimport joblib\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.ensemble import RandomForestClassifier\nfrom sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score\nfrom sklearn.decomposition import PCA\nsns.set_theme(style='whitegrid')",
+            
+            "def simple_smote(X, y, random_state=42):\n    np.random.seed(random_state)\n    classes, counts = np.unique(y, return_counts=True)\n    c0_count = counts[0]\n    c1_count = counts[1]\n    if c0_count == c1_count:\n        return X.copy(), y.copy()\n    majority_class = classes[np.argmax(counts)]\n    minority_class = classes[np.argmin(counts)]\n    X_min = X[y == minority_class].values\n    X_maj = X[y == majority_class].values\n    n_samples_to_add = len(X_maj) - len(X_min)\n    if n_samples_to_add <= 0:\n        return X.copy(), y.copy()\n    from sklearn.neighbors import NearestNeighbors\n    k_neighbors = min(5, len(X_min) - 1)\n    if k_neighbors < 1:\n        synthetic_samples = X_min[np.random.choice(len(X_min), n_samples_to_add)]\n    else:\n        nn = NearestNeighbors(n_neighbors=k_neighbors + 1)\n        nn.fit(X_min)\n        neighbors_idx = nn.kneighbors(X_min, return_distance=False)\n        synthetic_samples = []\n        for _ in range(n_samples_to_add):\n            idx = np.random.choice(len(X_min))\n            neighbor_choice = np.random.choice(neighbors_idx[idx][1:])\n            diff = X_min[neighbor_choice] - X_min[idx]\n            val = X_min[idx] + np.random.rand() * diff\n            synthetic_samples.append(val)\n        synthetic_samples = np.array(synthetic_samples)\n    X_res = np.vstack([X.values, synthetic_samples])\n    y_res = np.concatenate([y.values, np.full(n_samples_to_add, minority_class)])\n    X_res_df = pd.DataFrame(X_res, columns=X.columns)\n    y_res_series = pd.Series(y_res, name=y.name)\n    return X_res_df, y_res_series",
             
             "df = pd.read_csv('../data/divorce.csv', sep=';')\nif len(df.columns) == 1:\n    df = pd.read_csv('../data/divorce.csv', sep=',')\ndf.dropna(inplace=True)\nif 'Id' in df.columns:\n    df.drop('Id', axis=1, inplace=True)",
             
@@ -97,7 +133,7 @@ if not os.path.exists(RETRAIN_FLAG_FILE):
             
             "logres_all_orig = LogisticRegression(C=0.01, max_iter=1000, random_state=42)\nlogres_all_orig.fit(X_train_all, y_train)\nlogres_fs_orig = LogisticRegression(C=0.01, max_iter=1000, random_state=42)\nlogres_fs_orig.fit(X_train_top, y_train)\nrf_all_orig = RandomForestClassifier(n_estimators=100, random_state=42)\nrf_all_orig.fit(X_train_all, y_train)\nrf_fs_orig = RandomForestClassifier(n_estimators=100, random_state=42)\nrf_fs_orig.fit(X_train_top, y_train)",
             
-            "smote = SMOTE(random_state=42)\nX_train_all_aug, y_train_all_aug = smote.fit_resample(X_train_all, y_train)\nX_train_top_aug, y_train_top_aug = smote.fit_resample(X_train_top, y_train)",
+            "X_train_all_aug, y_train_all_aug = simple_smote(X_train_all, y_train)\nX_train_top_aug, y_train_top_aug = simple_smote(X_train_top, y_train)",
             
             "logres_all_aug = LogisticRegression(C=0.01, max_iter=1000, random_state=42)\nlogres_all_aug.fit(X_train_all_aug, y_train_all_aug)\nlogres_fs_aug = LogisticRegression(C=0.01, max_iter=1000, random_state=42)\nlogres_fs_aug.fit(X_train_top_aug, y_train_top_aug)\nrf_all_aug = RandomForestClassifier(n_estimators=100, random_state=42)\nrf_all_aug.fit(X_train_all_aug, y_train_all_aug)\nrf_fs_aug = RandomForestClassifier(n_estimators=100, random_state=42)\nrf_fs_aug.fit(X_train_top_aug, y_train_top_aug)",
             

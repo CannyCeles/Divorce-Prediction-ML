@@ -7,4 +7,3 @@ streamlit
 plotly
 joblib
 nbformat
-imbalanced-learn
