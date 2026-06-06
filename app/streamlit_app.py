@@ -389,6 +389,18 @@ def load_data():
 models, features = load_models()
 df = load_data()
 
+X_all_data = df.drop('Class', axis=1)
+y_all_data = df['Class']
+X_tr, X_te, y_tr, y_te = train_test_split(X_all_data, y_all_data, test_size=0.2, random_state=42)
+
+if st.session_state['dataset_mode'] == 'Original':
+    df_active = df.copy()
+else:
+    X_tr_aug, y_tr_aug = simple_smote(X_tr, y_tr, target_size=200)
+    train_aug = pd.concat([X_tr_aug, y_tr_aug], axis=1)
+    test_orig = pd.concat([X_te, y_te], axis=1)
+    df_active = pd.concat([train_aug, test_orig], ignore_index=True)
+
 if page == "🏠 Home":
     st.title("MatrimonyMetric 📋")
     st.markdown("### Predicting Marital Stability using the Gottman Method")
@@ -443,10 +455,6 @@ elif page == "📂 Dataset Description":
     st.header("Oversampling & Data Synthesis (SMOTE)")
     st.write(f"The active dataset mode is set to **{st.session_state['dataset_mode']}** in the sidebar.")
     
-    X_all_data = df.drop('Class', axis=1)
-    y_all_data = df['Class']
-    X_tr, X_te, y_tr, y_te = train_test_split(X_all_data, y_all_data, test_size=0.2, random_state=42)
-    
     orig_c0 = int((y_tr == 0).sum())
     orig_c1 = int((y_tr == 1).sum())
     
@@ -482,13 +490,13 @@ elif page == "📂 Dataset Description":
 
 elif page == "📊 Exploratory Data Analysis":
     st.title("Exploratory Data Analysis")
-    st.write("Overview of the raw dataset before any preprocessing.")
+    st.write(f"Overview of the **{st.session_state['dataset_mode']}** dataset split.")
     
     st.header("Showing Top 5 Records")
-    st.dataframe(df.head(), use_container_width=True)
+    st.dataframe(df_active.head(), use_container_width=True)
     
     with st.expander("View Full Data"):
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df_active, use_container_width=True)
         
     st.header("Dataset Overview")
     st.write("This dataset contains responses from a survey focused on marriage stability.")
@@ -496,27 +504,27 @@ elif page == "📊 Exploratory Data Analysis":
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Data Types & Missing Values")
-        buffer = pd.DataFrame({'Data Type': df.dtypes, 'Missing Values': df.isnull().sum()})
+        buffer = pd.DataFrame({'Data Type': df_active.dtypes, 'Missing Values': df_active.isnull().sum()})
         st.dataframe(buffer, use_container_width=True)
         
     with col2:
         st.subheader("Dataset Shape")
-        st.metric("Total Rows", df.shape[0])
-        st.metric("Total Columns", df.shape[1])
+        st.metric("Total Rows", df_active.shape[0])
+        st.metric("Total Columns", df_active.shape[1])
         
     st.header("Statistical Summary")
-    st.dataframe(df.describe().T, use_container_width=True)
+    st.dataframe(df_active.describe().T, use_container_width=True)
     
     st.header("Visual Diagnostics")
     st.write("Histograms for all features to observe the distribution of responses (0 to 4).")
     
-    fig = px.histogram(df.melt(id_vars=['Class']), x='value', facet_col='variable', facet_col_wrap=6, color='Class',
+    fig = px.histogram(df_active.melt(id_vars=['Class']), x='value', facet_col='variable', facet_col_wrap=6, color='Class',
                        color_discrete_sequence=['#10b981', '#ef4444'])
     fig.update_layout(height=1200)
     st.plotly_chart(style_plotly_fig(fig), use_container_width=True)
     
     st.subheader("Overall Response Value Distribution (All Features)")
-    all_vals = df.drop('Class', axis=1, errors='ignore').values.flatten()
+    all_vals = df_active.drop('Class', axis=1, errors='ignore').values.flatten()
     val_counts = pd.Series(all_vals).value_counts().sort_index()
     val_df = pd.DataFrame({
         'Response Value': [str(x) for x in val_counts.index],
