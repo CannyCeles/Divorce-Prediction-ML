@@ -12,6 +12,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 import nbformat as nbf
+import time
 
 def simple_smote(X, y, target_size=200, random_state=42):
     np.random.seed(random_state)
@@ -742,14 +743,18 @@ elif page == "📋 Prediction":
                     
             input_df = pd.DataFrame([model_input_data])
             
+            start_time = time.perf_counter()
             probability = active_model.predict_proba(input_df)[0][1] * 100
+            end_time = time.perf_counter()
+            inference_time = (end_time - start_time) * 1000
             
             st.markdown("### 📊 Prediction Results")
             st.markdown("<br>", unsafe_allow_html=True)
             
             if probability > 50:
                 st.error(f"⚠️ **High Risk of Relationship Instability: {probability:.1f}% Probability**")
-                st.progress(int(probability)) 
+                st.markdown(f"Inference time: {inference_time:.2f} ms")
+                st.progress(int(probability))
                 st.markdown("""
                 <div class="metric-card" style="border-color: #EF4444; background-color: rgba(239, 68, 68, 0.05);">
                     <h3 style="color: #EF4444;">Negative Communication Patterns Identified</h3>
@@ -759,6 +764,7 @@ elif page == "📋 Prediction":
             else:
                 stability_prob = 100 - probability
                 st.success(f"✅ **High Marital Stability: {stability_prob:.1f}% Probability**")
+                st.markdown(f"Inference time: {inference_time:.2f} ms")
                 st.progress(int(probability))
                 st.markdown("""
                 <div class="metric-card" style="border-color: #10B981; background-color: rgba(16, 185, 129, 0.05);">
